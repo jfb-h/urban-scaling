@@ -1,0 +1,123 @@
+# Introduction
+
+The purpose of this notebook is to reproduce the analysis by Cosma Shalizi (2011), based on which he concludes that super-linear urban scaling of a set of economic indicators is a statistical artifact. This analysis contradicts previous such claims of super-linear scaling by Bettencourt et al., which have since then grown in popularity, and are now a prominent stylized fact in many theories of economic geography and urban economics.
+
+# Getting the data
+
+The data come from the US Bureau of Economic Analysis (BEA) and a prepared dataset is hosted on the authors homepage.
+
+```{r}
+file <- "bea-2006.csv"
+
+if (file.exists(file)) {
+  bea <- read.csv(file)
+} else {
+  bea <- read.csv("http://www.stat.cmu.edu/~cshalizi/mreg/15/lectures/03/bea-2006.csv")
+  write.csv(bea, file, row.names = FALSE)
+}
+```
+
+```{r}
+head(bea)
+```
+
+The dataset has observations for 366 Metropolitan Statistical Areas (MSAs) in the US for the year 2006, including population size (`pop`), per capita gross metropolitan product (`pcgmp`) and GMP shares across a range of high value-added employment sectors (`finance`, `prof.tech`, `ict`, `management`).
+
+```{r}
+dim(bea)
+```
+
+There are quite a few missing cases for the latter, though:
+```{r}
+sum(complete.cases(bea))
+```
+
+# Getting to know the data
+
+Here are histograms for all variables:
+
+```{r}
+par(mfrow = c(2, 3))
+for (col in names(bea)[-1]) {
+  hist(bea[,col], main = col, xlab = "")
+}
+```
+
+From these, we learn that per-capital GMP ranges from 10k USD all the way to 80k USD;
+
+```{r}
+bea$MSA[which.min(bea$pcgmp)]
+bea$MSA[which.max(bea$pcgmp)]
+```
+
+We can also look at pairwise scatterplots:
+
+```{r, fig.width = 10, fig.height = 10}
+pairs(bea[,-1], pch = 19, cex = 0.3, log = 2)
+```
+
+We see that per capita GMP correlates with population, but so do the shares of GMP in high value-added employment branches, which themselves again correlate with per capita GMP.
+
+# Linear models
+
+Regressing per capita GMP on log population size reveals a reasonable fit:
+
+```{r}
+# df <- bea[complete.cases(bea),]
+df <- bea
+fit <- lm(pcgmp ~ log(pop), data = df)
+summary(fit)
+plot(pcgmp ~ log(pop), data = df, pch = 19, cex = 0.3)
+abline(fit, col = "tomato")
+```
+
+This model implies that doubling population comes with a 4500 USD bonus to per capita GMP, roughly speaking.
+
+What is less reasonable is the correlation of residuals with shares in high value added employment sectors:
+
+```{r, fig.width = 10, fig.height = 7}
+res <- residuals(fit)
+par(mfrow = c(2,2), mar = c(5, 5, 2, 1))
+for (col in names(df[, -(1:3)])) {
+  y <- df[,col]
+  plot(y, res, pch = 19, cex = 0.2, main = NULL, xlab = col, ylab = "Residual")
+  lines(smooth.spline(y[!is.na(y)], res[!is.na(y)], df = 4), col = "tomato")
+}
+```
+
+Controlling for these eliminates the population coefficient almost completely: It went from almost 4500 to 314 and is now eclipsed by its standard error.
+
+```{r}
+fit <- lm(
+  pcgmp ~ log(pop) + scale(finance) + scale(ict) +
+    scale(prof.tech) + scale(management),
+  data = bea
+)
+
+summary(fit)
+```
+
+So basic multiple linear regression is already quite sceptical of the urban scaling effect when employment profiles are taken into account.
+
+We saw quite a few missing cases before, which are currently being dropped. we can also check what happens when we interpolate all missing values by their respective variables' means:
+
+
+```{r}
+bea_interpol <- bea
+for (n in names(bea)[-(1:3)]) {
+  col <- bea_interpol[,n]
+  bea_interpol[is.na(col), n] <- mean(col, na.rm = TRUE)
+}
+
+fit <- lm(
+  pcgmp ~ log(pop) + scale(finance) + scale(ict) +
+    scale(prof.tech) + scale(management),
+  data = bea_interpol
+)
+
+summary(fit)
+```
+
+# Additive models
+
+In the paper, Shalizi (2011) uses generalized additive models (GAMs) to not impose linear relationships. 
