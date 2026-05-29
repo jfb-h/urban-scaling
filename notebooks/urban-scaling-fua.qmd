@@ -13,7 +13,7 @@ theme_set(hrbrthemes::theme_ipsum_rc())
 lm_with_scatter <- function(logx = TRUE, logy = FALSE) {
   l <- list(
     geom_point(size = 0.3),
-    geom_smooth(color = "tomato", method = "lm")
+    geom_smooth(method = "lm")
   )
   labs <- scales::label_number(scale_cut = scales::cut_short_scale())
   if (logx) l <- append(l, scale_x_log10(labels = labs))
@@ -72,27 +72,27 @@ dat <- dat |>
 
 # Urban scaling
 
-```{r, fig.width = 10, fig.height = 6}
-countries <- c("USA", "DEU", "FRA", "ITA", "NLD", "POL")
+```{r, fig.width = 10, fig.height = 7}
+usa <- filter(dat, time == 2018, country == "USA")
+plot(gdp_pc ~ log(pop), data = usa, pch = 19, cex = 0.8, frame = FALSE)
+fit <- lm(gdp_pc ~ log(pop), data = usa)
+abline(fit, col = "tomato")
+```
 
+```{r, fig.width = 10, fig.height = 6}
+countries <- c("USA", "DEU", "FRA", "ITA", "ESP", "POL")
 pd <- filter(dat, time == 2020, country %in% countries)
-
-p1 <- ggplot(filter(pd, country == "USA"), aes(pop, gdp)) +
-  lm_with_scatter(logx = TRUE, logy = TRUE) +
-  labs(title = "Extensive GDP (total)")
-
-p2 <- ggplot(filter(pd, country == "USA"), aes(pop, gdp_pc)) +
-  lm_with_scatter(logx = TRUE, logy = TRUE) +
-  labs(title = "Intensive GDP (per capita)")
-
-p1 | p2
+par(mfrow = c(2, 3), mar = c(5, 5, 2, 1))
+for (ctry in countries) {
+  usa <- filter(dat, time == 2018, country == ctry)
+  plot(gdp_pc ~ log(pop), data = usa, pch = 19, cex = 0.8, frame = FALSE, main = ctry)
+  fit <- lm(gdp_pc ~ log(pop), data = usa)
+  abline(fit, col = "tomato")
+}
 ```
 
-```{r, fig.width = 10, fig.height = 6}
-ggplot(pd, aes(pop, gdp_pc)) +
-  lm_with_scatter(logx = TRUE) +
-  facet_wrap(~country, scales = "free") +
-  labs(title = "Cross-country comparison")
+```{r, fig.width = 10, fig.height = 7}
+ggplot(pd, aes(pop, gdp_pc, color = fua)) +
+  lm_with_scatter(logx=TRUE) +
+  facet_wrap(~country, scales = "free")
 ```
-
-

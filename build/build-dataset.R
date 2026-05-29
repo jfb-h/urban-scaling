@@ -5,6 +5,7 @@ library(readr)
 gdp_raw <- read_csv("data/raw/tl3-gdp.csv")
 pop_raw <- read_csv("data/raw/tl3-pop.csv")
 emp_raw <- read_csv("data/raw/tl3-emp.csv")
+map_raw <- duckplyr::read_parquet_duckdb("data/raw/local-data-portal/sau_geo_tl_mapping.parquet") |> collect()
 
 pop <- pop_raw |>
   select(
@@ -84,5 +85,18 @@ dat <- dat |>
     names_prefix = "emp_"
   )
 
+map <- select(
+  map_raw, pk, tl3_id, iso3, launame_lat,
+  DEGURBA_L1, DEGURBA_L2,
+  fuacode, fuaname_en,
+  citycode, cityname_en
+)
+
+fua <- summarize(map, fua = any(!is.na(fuacode)), .by = tl3_id)
+
+dat <- left_join(
+  dat, fua,
+  by = c("code" = "tl3_id")
+)
 
 arrow::write_parquet(dat, "data/processed/data.parquet")
