@@ -1,151 +1,98 @@
 # Introduction
 
+# Preparations
+
 ```{r}
-library(tinyplot)
-tinytheme("ipsum")
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+theme_set(hrbrthemes::theme_ipsum_rc())
+```
+
+```{r}
+lm_with_scatter <- function(logx = TRUE, logy = FALSE) {
+  l <- list(
+    geom_point(size = 0.3),
+    geom_smooth(color = "tomato", method = "lm")
+  )
+  labs <- scales::label_number(scale_cut = scales::cut_short_scale())
+  if (logx) l <- append(l, scale_x_log10(labels = labs))
+  if (logy) l <- append(l, scale_y_log10(labels = labs))
+  l
+}
+
+par(
+  pch = 19,
+  cex = 0.8,
+  bty = "n"
+)
 ```
 
 # Getting the data
 
-First, we read the population data, as obtained from the [OECD data explorer](https://data-explorer.oecd.org/) (population by age and sex).
-```{r}
-pop <- arrow::read_csv_arrow("data/pop.csv")
-
-# select subset of variables
-vars_pop <- c(
-  territorial_level = "TERRITORIAL_LEVEL",
-  code = "REF_AREA",
-  name = "Reference area",
-  time = "TIME_PERIOD",
-  measure = "MEASURE",
-  pop = "OBS_VALUE",
-  age = "Age",
-  sex = "Sex"
-)
-
-pop <- pop[,vars_pop]
-
-# rename variables
-names(pop) <- names(vars_pop)
-
-# filter rows to totals and FUAs, drop unused variables
-pop <- subset(pop,
-  territorial_level == "FUA" & age == "Total" & sex == "Total",
-  select = - c(territorial_level, measure, age, sex)
-)
-```
-
-Then, we do the same with GDP. Here, we need to pay attention to units as there are multiple (percent, per capita, and total) GDP measures.
+A relatively clean dataset with information on population size, GDP, and employment across a variety of sectors has been compiled from the OECD Data Explorer in the `build/build-dataset.R` script.
 
 ```{r}
-gdp_raw <- arrow::read_csv_arrow("data/gdp.csv")
-
-# select subset of variables
-vars_gdp <- c(
-  code = "REF_AREA",
-  name = "Reference area",
-  time = "TIME_PERIOD",
-  measure = "MEASURE",
-  unit = "UNIT_MEASURE",
-  gdp = "OBS_VALUE"
-)
-
-gdp <- gdp_raw[,vars_gdp]
-
-# rename variables
-names(gdp) <- names(vars_gdp)
-
-# filter rows to GDP, drop unused variables
-gdp <- subset(gdp, measure == "GDP", select = -c(measure))
-
-# reshape from long to wide format for different gdp measures
-gdp <- reshape(gdp,
-  idvar = c("code", "name", "time"),
-  timevar = "unit",
-  direction = "wide"
-)
-
-# rename gdp measures
-names(gdp)[4:6] <- c("gdp_pct", "gdp_pc", "gdp")
-```
-
-```{r}
-pat_raw <- arrow::read_csv_arrow("data/patents.csv")
-
-# select subset of variables
-vars_pat <- c(
-  code = "REF_AREA",
-  name = "Reference area",
-  time = "TIME_PERIOD",
-  tech = "PATENT_TECH",
-  pat = "OBS_VALUE"
-)
-
-pat <- pat_raw[,vars_pat]
-
-# rename variables
-names(pat) <- names(vars_pat)
-
-# filter rows to pat, drop unused variables
-pat <- subset(pat, tech == "_T", select = -c(tech))
-
-```
-
-```{r}
-emp <- duckplyr::read_parquet_duckdb("data/local-data-portal/sau_geo_tl_mapping.parquet") |> as.data.frame()
-```
-
-
-Now we combine the datasets by joining on regional codes and time:
-
-```{r}
-dat <- merge(gdp, pop, by = c("code", "name", "time"), all = TRUE)
-dat <- merge(dat, pat, by = c("code", "name", "time"), all = TRUE)
-dat$country <- substr(dat$code, 1, 2)
-head(dat)
+dat <- duckplyr::read_parquet_duckdb("../data/processed/data.parquet")
 ```
 
 # Getting to know the data
 
-```{r}
-pd <- subset(dat, country == "US")
-pd <- xtabs(gdp_pc ~ time + code, data = pd)
-matplot(rownames(pd), pd, type = "l", lty = 1, xlab = "", ylab = "GDP per capita")
+```{}
+ 1 M_N      Professional, scientific and technical activities; administrative a…
+ 2 L        Real estate activities
+ 3 J        Information and communication
+ 4 _T       Total - all activities
+ 5 C        Manufacturing
+ 6 OTQ      Public administration, defence, education, human health and social …
+ 7 A        Agriculture, forestry and fishing
+ 8 K        Financial and insurance activities
+ 9 GTI      Wholesale and retail trade; repair of motor vehicles and motorcycle…
+10 F        Construction
+11 RTU      Arts, entertainment and recreation; other service activities; activ…
+12 BTE      Industry (except construction)
+```
+
+```{r, fig.width = 10, fig.height = 6}
+dat <- dat |>
+  mutate(
+    finance = emp_K / emp__T,
+    ict = emp_J / emp__T,
+    proftech = emp_M_N / emp__T,
+    pubadmin = emp_OTQ / emp__T,
+    realest = emp_L / emp__T,
+    trade_vehicles = emp_GTI / emp__T,
+    construction = emp_F / emp__T,
+    entertainment = emp_RTU / emp__T,
+    industry = emp_BTE / emp__T,
+    manufact = emp_C / emp__T,
+    agricult = emp_A / emp__T
+  )
 ```
 
 # Urban scaling
 
-Here's roughly the analysis that Shalizi (2011) did. First, the original analysis based on extensive data for the US:
-```{r}
-pd <- subset(dat, country == "US" & time == "2020")
-plt(gdp ~ pop, data = pd, cex = 0.5, log = "xy")
+```{r, fig.width = 10, fig.height = 6}
+countries <- c("USA", "DEU", "FRA", "ITA", "NLD", "POL")
+
+pd <- filter(dat, time == 2020, country %in% countries)
+
+p1 <- ggplot(filter(pd, country == "USA"), aes(pop, gdp)) +
+  lm_with_scatter(logx = TRUE, logy = TRUE) +
+  labs(title = "Extensive GDP (total)")
+
+p2 <- ggplot(filter(pd, country == "USA"), aes(pop, gdp_pc)) +
+  lm_with_scatter(logx = TRUE, logy = TRUE) +
+  labs(title = "Intensive GDP (per capita)")
+
+p1 | p2
 ```
 
-And then the intensive, per capita, data:
-
-```{r}
-pd <- subset(dat, country == "US" & time == "2020")
-fit <- lm(gdp_pc ~ log(pop), data = pd)
-summary(fit)
-plt(gdp_pc ~ log(pop), data = pd, cex = 0.5)
-abline(fit, col = "tomato")
+```{r, fig.width = 10, fig.height = 6}
+ggplot(pd, aes(pop, gdp_pc)) +
+  lm_with_scatter(logx = TRUE) +
+  facet_wrap(~country, scales = "free") +
+  labs(title = "Cross-country comparison")
 ```
 
-Just as a point of comparison, let's do the same for a range of countries:
-
-```{r, fig.width = 8, fig.height = 7}
-
-countries <- c("US", "DE", "FR", "IT", "UK", "ES", "PL", "NL", "BE")
-
-pd <- subset(dat, country %in% countries & time == 2020)
-
-tinyplot(
-  gdp_pc ~ log(pop) | country,
-  data = pd,
-  facet = "by", facet.args = list(free = TRUE),
-  legend = FALSE, palette = "tableau"
-)
-
-tinyplot_add(type = "lm")
-```
 
