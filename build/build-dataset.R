@@ -86,25 +86,3 @@ dat <- dat |>
 
 
 arrow::write_parquet(dat, "data/processed/data.parquet")
-
-# test analysis
-
-library(ggplot2)
-
-theme_set(hrbrthemes::theme_ipsum_pub())
-
-countries <- c("USA", "DEU", "FRA", "ITA", "NLD", "POL")
-
-pd <- filter(dat, time == 2020, country %in% countries)
-
-ggplot(pd, aes(pop, gdp)) +
-  geom_point(size = 1, alpha = 0.3) +
-  geom_smooth(method = "lm") +
-  scale_x_log10() +
-  scale_y_log10()
-
-ggplot(pd, aes(pop, gdp_pc)) +
-  geom_point(size = 0.7) +
-  geom_smooth(method = "lm") +
-  scale_x_log10() +
-  facet_wrap(~country, scales = "free")
